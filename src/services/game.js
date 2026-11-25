@@ -37,7 +37,7 @@ async function buildState(puzzle, play, db = { query }) {
     guesses: guesses.map((g) =>
       g.type === 'skip'
         ? { type: 'skip', correct: false }
-        : { type: 'guess', manga: toManga(byId.get(g.mangaId)), correct: g.correct }),
+        : { type: 'guess', manga: toAnswer(byId.get(g.mangaId)), correct: g.correct }),
     frames,
     answer: finished ? toAnswer(await getManga(puzzle.manga_id)) : null
   };
