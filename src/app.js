@@ -1,14 +1,14 @@
-import fs from 'node:fs';
 import express from 'express';
 import cors from 'cors';
 import swaggerUi from 'swagger-ui-express';
 import multer from 'multer';
-import { uploadDir, framesDir } from './config.js';
+import { uploadDir } from './config.js';
+import { ensureUploadDirs } from './services/uploads.js';
 import swaggerDocument from './swagger.js';
 import publicRoutes from './routes/public.js';
 import adminRoutes from './routes/admin.js';
 
-fs.mkdirSync(framesDir, { recursive: true });
+await ensureUploadDirs();
 
 const app = express();
 

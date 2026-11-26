@@ -5,21 +5,20 @@ import { HttpError } from '../utils.js';
 
 const router = Router();
 
-const parseNumber = (raw) => {
+const id = (raw) => {
   if (!/^\d+$/.test(raw)) throw new HttpError(404, 'Puzzle introuvable');
   return parseInt(raw, 10);
 };
 
+// mode quotidien : désactivé (404) tant que DAILY_ENABLED n'est pas à true
 router.get('/puzzles/today', async (req, res) => res.json(await game.getToday(req.query.playerId)));
-router.get('/puzzles', async (req, res) => res.json(await game.listForPlayer(req.query.playerId)));
-router.get('/puzzles/:number', async (req, res) =>
-  res.json(await game.getByNumber(parseNumber(req.params.number), req.query.playerId)));
-router.post('/puzzles/:number/guess', async (req, res) =>
-  res.json(await game.guess(parseNumber(req.params.number), req.body?.playerId, req.body?.mangaId)));
-router.post('/puzzles/:number/skip', async (req, res) =>
-  res.json(await game.skip(parseNumber(req.params.number), req.body?.playerId)));
-router.get('/puzzles/:number/stats', async (req, res) =>
-  res.json(await game.getStats(parseNumber(req.params.number))));
+router.get('/puzzles', async (req, res) => res.json(await game.listPuzzles()));
+router.get('/puzzles/:id', async (req, res) => res.json(await game.getPuzzle(id(req.params.id), req.query.playerId)));
+router.post('/puzzles/:id/guess', async (req, res) =>
+  res.json(await game.guess(id(req.params.id), req.body?.playerId, { mangaId: req.body?.mangaId, text: req.body?.text })));
+router.post('/puzzles/:id/skip', async (req, res) =>
+  res.json(await game.skip(id(req.params.id), req.body?.playerId)));
+router.get('/puzzles/:id/stats', async (req, res) => res.json(await game.getStats(id(req.params.id))));
 
 router.get('/mangas/search', async (req, res) =>
   res.json(await searchMangas(req.query.q, req.query.limit)));

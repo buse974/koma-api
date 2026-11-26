@@ -7,8 +7,6 @@
     "start": "node src/index.js",
     "dev": "nodemon src/index.js",
     "db:migrate": "node src/migrate.js",
-    "import:anilist": "node scripts/import-anilist.js",
-    "seed:demo": "node scripts/seed-demo.js",
     "test": "node --test --test-concurrency=1 test/*.test.js"
   },
   "keywords": [],
