@@ -1,6 +1,7 @@
 import { query } from '../db.js';
 import { HttpError } from '../utils.js';
 import { saveImage, deleteImages, imageUrl } from './uploads.js';
+import { searchAniList } from './anilist.js';
 
 /** Version publique (autocomplétion, essais). */
 export const toManga = (r) => ({
@@ -35,10 +36,7 @@ async function requireManga(id) {
   return m;
 }
 
-export async function searchMangas(q, limit = 10) {
-  const term = String(q || '').trim().toLowerCase();
-  if (term.length < 2) return [];
-  const n = Math.min(Math.max(parseInt(limit, 10) || 10, 1), 50);
+async function searchLocal(term, n) {
   const like = term.replace(/[\\%_]/g, '\\$&');
   const { rows } = await query(
     `SELECT * FROM mangas
@@ -46,11 +44,47 @@ export async function searchMangas(q, limit = 10) {
      ORDER BY (lower(title) LIKE $1 || '%') DESC,
               (search_text LIKE '%' || $1 || '%') DESC,
               word_similarity($2, search_text) DESC,
-              title
+              id -- catalogue initial inséré du plus au moins populaire
      LIMIT $3`,
     [like, term, n]
   );
-  return rows.map(toManga);
+  return rows;
+}
+
+/**
+ * Enregistre les mangas venus d'AniList (sans écraser une fiche existante,
+ * que l'admin a pu retoucher) et renvoie les lignes dans l'ordre AniList.
+ */
+async function saveFromAniList(items) {
+  if (!items.length) return [];
+  for (const m of items) {
+    await query(
+      `INSERT INTO mangas (anilist_id, title, title_native, title_english, aliases, year, cover_url, author, link, search_text)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) ON CONFLICT (anilist_id) DO NOTHING`,
+      [m.anilist_id, m.title, m.title_native, m.title_english, m.aliases, m.year, m.cover_url, m.author, m.link, buildSearchText(m)]
+    );
+  }
+  const ids = items.map((m) => m.anilist_id);
+  const { rows } = await query('SELECT * FROM mangas WHERE anilist_id = ANY($1)', [ids]);
+  const byAnilist = new Map(rows.map((r) => [r.anilist_id, r]));
+  return ids.map((i) => byAnilist.get(i)).filter(Boolean);
+}
+
+/**
+ * Autocomplétion : AniList en direct + base locale.
+ * Ordre : tes mangas saisis à la main, puis la pertinence AniList, puis le reste de la base.
+ * Si AniList ne répond pas, seule la base locale est utilisée.
+ */
+export async function searchMangas(q, limit = 10) {
+  const term = String(q || '').trim().toLowerCase();
+  if (term.length < 2) return [];
+  const n = Math.min(Math.max(parseInt(limit, 10) || 10, 1), 50);
+  const [local, remote] = await Promise.all([searchLocal(term, n), searchAniList(term, n)]);
+  const fromAniList = remote ? await saveFromAniList(remote) : [];
+  const manual = local.filter((r) => r.anilist_id === null);
+  const seen = new Set();
+  const merged = [...manual, ...fromAniList, ...local].filter((r) => !seen.has(r.id) && seen.add(r.id));
+  return merged.slice(0, n).map(toManga);
 }
 
 // ---------- Admin ----------

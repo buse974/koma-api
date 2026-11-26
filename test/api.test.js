@@ -6,6 +6,7 @@ import sharp from 'sharp';
 import app from '../src/app.js';
 import { pool, query } from '../src/db.js';
 import { normalizeAnswer } from '../src/services/game.js';
+import { resetAniListState } from '../src/services/anilist.js';
 
 const TAG = `zzz-${crypto.randomUUID().slice(0, 8)}`; // tout ce que le test crée porte ce préfixe
 const TARGET_TITLE = `${TAG} Secret Target`;
@@ -224,4 +225,56 @@ test('admin : cases (WebP), réordonnancement, ordre des puzzles', async () => {
   assert.equal(pub[0].id, mangaPuzzle.id);
   assert.equal(pub[0].number, 1);
   await admin('put', '/api/admin/puzzles/order').send({ mode: 'manga', ids: moved.slice(1) }).expect(400);
+});
+
+test('recherche AniList en direct : fusion, enregistrement, repli si panne', async () => {
+  const anilistId = 900000000 + Math.floor(Math.random() * 1000000);
+  const media = {
+    id: anilistId, siteUrl: `https://anilist.co/manga/${anilistId}`,
+    title: { romaji: `${TAG} Live Romaji`, english: `${TAG} Live EN`, native: 'ライブ' },
+    synonyms: ['Live alias'], startDate: { year: 2020 }, coverImage: { large: 'https://example.test/c.jpg' },
+    staff: { edges: [{ role: 'Story & Art', node: { name: { full: 'Auteur Test' } } }] }
+  };
+  const realFetch = globalThis.fetch;
+  let calls = 0;
+  process.env.ANILIST_SEARCH = 'on';
+  resetAniListState();
+  try {
+    globalThis.fetch = async () => { calls++; return new Response(JSON.stringify({ data: { Page: { media: [media] } } }), { status: 200 }); };
+    let res = await request(app).get(`/api/mangas/search?q=${TAG} live`).expect(200);
+    const hit = res.body.find((m) => m.title === `${TAG} Live Romaji`);
+    assert.ok(hit, 'le résultat AniList doit apparaître');
+    assert.equal(hit.titleNative, 'ライブ');
+    const { rows } = await query('SELECT * FROM mangas WHERE anilist_id = $1', [anilistId]);
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0].author, 'Auteur Test');
+
+    // deuxième recherche identique : cache, pas de nouvel appel ni de doublon
+    await request(app).get(`/api/mangas/search?q=${TAG} live`).expect(200);
+    assert.equal(calls, 1);
+
+    // fiche retouchée par l'admin : jamais écrasée par AniList
+    await query('UPDATE mangas SET title_english = $2 WHERE anilist_id = $1', [anilistId, 'Retouché']);
+    resetAniListState();
+    res = await request(app).get(`/api/mangas/search?q=${TAG} live`).expect(200);
+    assert.equal(res.body.find((m) => m.id === hit.id).titleEnglish, 'Retouché');
+
+    // AniList en panne : repli sur la base locale, sans erreur
+    resetAniListState();
+    globalThis.fetch = async () => { throw new Error('réseau'); };
+    res = await request(app).get(`/api/mangas/search?q=${TAG} live`).expect(200);
+    assert.ok(res.body.some((m) => m.id === hit.id));
+
+    // 429 : AniList mis en pause
+    resetAniListState();
+    calls = 0;
+    globalThis.fetch = async () => { calls++; return new Response('', { status: 429, headers: { 'retry-after': '60' } }); };
+    await request(app).get(`/api/mangas/search?q=${TAG} autre`).expect(200);
+    await request(app).get(`/api/mangas/search?q=${TAG} encore`).expect(200);
+    assert.equal(calls, 1);
+  } finally {
+    globalThis.fetch = realFetch;
+    process.env.ANILIST_SEARCH = 'off';
+    resetAniListState();
+  }
 });
