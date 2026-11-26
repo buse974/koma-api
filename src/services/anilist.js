@@ -11,7 +11,7 @@ const CACHE_MAX = 1000;
 const QUERY = `
 query ($search: String, $perPage: Int) {
   Page(page: 1, perPage: $perPage) {
-    media(search: $search, type: MANGA, sort: [SEARCH_MATCH, POPULARITY_DESC], isAdult: false) {
+    media(search: $search, type: MANGA, countryOfOrigin: JP, sort: [SEARCH_MATCH, POPULARITY_DESC], isAdult: false) {
       id siteUrl
       title { romaji english native }
       synonyms

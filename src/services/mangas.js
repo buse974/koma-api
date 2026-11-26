@@ -72,7 +72,8 @@ async function saveFromAniList(items) {
 
 /**
  * Autocomplétion : AniList en direct + base locale.
- * Ordre : tes mangas saisis à la main, puis la pertinence AniList, puis le reste de la base.
+ * Ordre : tes mangas saisis à la main, les titres de la base qui commencent par la recherche,
+ * puis la pertinence AniList, puis le reste de la base.
  * Si AniList ne répond pas, seule la base locale est utilisée.
  */
 export async function searchMangas(q, limit = 10) {
@@ -82,8 +83,12 @@ export async function searchMangas(q, limit = 10) {
   const [local, remote] = await Promise.all([searchLocal(term, n), searchAniList(term, n)]);
   const fromAniList = remote ? await saveFromAniList(remote) : [];
   const manual = local.filter((r) => r.anilist_id === null);
+  // titres de la base qui commencent par la recherche (déjà triés par popularité) : avant AniList,
+  // qui privilégie les correspondances exactes même obscures (« one » → « One » avant « ONE PIECE »)
+  const startsWith = (r) => [r.title, r.title_native, r.title_english].some((t) => t?.toLowerCase().startsWith(term));
+  const prefix = local.filter(startsWith);
   const seen = new Set();
-  const merged = [...manual, ...fromAniList, ...local].filter((r) => !seen.has(r.id) && seen.add(r.id));
+  const merged = [...manual, ...prefix, ...fromAniList, ...local].filter((r) => !seen.has(r.id) && seen.add(r.id));
   return merged.slice(0, n).map(toManga);
 }
 
